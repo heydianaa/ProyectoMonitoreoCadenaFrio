@@ -6,23 +6,28 @@
 #include <Arduino.h>
 #include "driver/gpio.h"
 #include <stdint.h>
+#include "driver/ledc.h"
 
-#define boton GPIO_NUM_33
-#define sensor GPIO_NUM_33
+#define boton GPIO_NUM_35
+#define sensor GPIO_NUM_34
 
-#define ledroja  GPIO_NUM_33
+#define ledroja  GPIO_NUM_32
 #define ledverde GPIO_NUM_33
-#define ledazul  GPIO_NUM_33
+#define ledazul  GPIO_NUM_25
 
-#define servomotor GPIO_NUM_33
+#define servomotor GPIO_NUM_13
 
-#define a GPIO_NUM_33
-#define b GPIO_NUM_33
-#define c GPIO_NUM_33
-#define d GPIO_NUM_33
-#define e GPIO_NUM_33
-#define f GPIO_NUM_33
-#define g GPIO_NUM_33
+#define a GPIO_NUM_16
+#define b GPIO_NUM_17
+#define c GPIO_NUM_18
+#define d GPIO_NUM_19
+#define e GPIO_NUM_21
+#define f GPIO_NUM_22
+#define g GPIO_NUM_23
+
+#define dispd GPIO_NUM_26
+#define dispu GPIO_NUM_27
+#define dispdec GPIO_NUM_14
 
 // ----Variables----
 
