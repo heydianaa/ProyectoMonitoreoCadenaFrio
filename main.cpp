@@ -250,11 +250,11 @@ void revisarTemperatura(float temperatura) {
   }
   else if (temperatura < 27.0) {
     encenderGelb();
-    moverServo(90);
+    moverServo(45);
   }
   else {
     encenderRojo();
-    moverServo(180);
+    moverServo(90);
   }
 }
 
