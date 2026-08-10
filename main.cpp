@@ -7,7 +7,9 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include <stdint.h>
+#include "config.h"
 
+// Pines
 #define boton GPIO_NUM_34
 #define sensor 36
 
@@ -28,7 +30,7 @@
 #define DISPLAY_3 14
 
 // ADC
-#define ADC_VREF_mV    3300.0
+#define ADC_VREF_mV 3300.0
 #define ADC_RESOLUTION 4096.0
 
 // PWM LED RGB
@@ -37,20 +39,23 @@
 #define canalAzul  LEDC_CHANNEL_2
 #define timerRGB LEDC_TIMER_0
 
-// BANDERAS
+// Adafruit IO
+AdafruitIO_Feed *canalTemperatura = io.feed("temperatura");
+
+// Banderas
 volatile bool leerTemperatura = false;
 volatile uint32_t tiempoBoton = 0;
 const uint32_t tiempoAntirrebote = 50;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-// VARIABLES DISPLAYS
+// Variables displays
 int decenas = 0;
 int unidades = 0;
 int decimal = 0;
 uint8_t digitoActual = 0;
 unsigned long tiempoMux = 0;
 
-//SEGMENTOS
+// Segmentos
 const uint8_t numeros[10][7] = {
   {1,1,1,1,1,1,0}, // 0
   {0,1,1,0,0,0,0}, // 1
@@ -64,25 +69,15 @@ const uint8_t numeros[10][7] = {
   {1,1,1,1,0,1,1}  // 9
 };
 
-// ----FUNCIONES----
+// Funciones
 void IRAM_ATTR botonISR();
 float leerTemp();
 void revisarTemperatura(float temperatura);
 
 // LED RGB
 void configurarRGB();
-void configurarCanal(
-  gpio_num_t pin,
-  ledc_channel_t canal,
-  ledc_timer_t timer
-);
-
-void escribirRGB(
-  uint8_t rojo,
-  uint8_t verde,
-  uint8_t azul
-);
-
+void configurarCanal(gpio_num_t pin, ledc_channel_t canal, ledc_timer_t timer);
+void escribirRGB(uint8_t rojo, uint8_t verde, uint8_t azul);
 void apagarLED();
 void encenderRojo();
 void encenderVerde();
@@ -96,23 +91,29 @@ void apagarDisplays();
 void apagarSegmentos();
 void multiplexarDisplays();
 
+
+// ========================
+// SETUP
+// ========================
+
 void setup() {
+
   Serial.begin(115200);
 
-  // BOTON
+  // Boton
   gpio_set_direction(boton, GPIO_MODE_INPUT);
   gpio_set_pull_mode(boton, GPIO_FLOATING);
 
-  // SENSOR LM35
+  // Sensor LM35
   pinMode(sensor, INPUT);
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
-  
+
   // LED RGB
   configurarRGB();
   apagarLED();
 
-  // SEGMENTOS
+  // Segmentos
   gpio_set_direction(a, GPIO_MODE_OUTPUT);
   gpio_set_direction(b, GPIO_MODE_OUTPUT);
   gpio_set_direction(c, GPIO_MODE_OUTPUT);
@@ -121,7 +122,7 @@ void setup() {
   gpio_set_direction(f, GPIO_MODE_OUTPUT);
   gpio_set_direction(g, GPIO_MODE_OUTPUT);
 
-  // CONTROL DISPLAYS
+  // Control displays
   gpio_set_direction(DISPLAY_1, GPIO_MODE_OUTPUT);
   gpio_set_direction(DISPLAY_2, GPIO_MODE_OUTPUT);
   pinMode(DISPLAY_3, OUTPUT);
@@ -130,65 +131,84 @@ void setup() {
   apagarSegmentos();
   separarTemperatura(0.0);
 
-  // INTERRUPCION
-  attachInterrupt(
-    digitalPinToInterrupt((uint8_t)boton),
-    botonISR,
-    CHANGE
-  );
+  // Interrupcion
+  attachInterrupt(digitalPinToInterrupt((uint8_t)boton), botonISR, CHANGE);
+
+  // Adafruit IO
+  Serial.print("Conectando con Adafruit IO");
+  io.connect();
+
+  while (io.status() < AIO_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.println();
+  Serial.println(io.statusText());
+  Serial.println("Sistema listo");
 }
 
 void loop() {
+
   multiplexarDisplays();
+  io.run();
+
   bool medir = false;
-  
-  // Leer bandera
+
   portENTER_CRITICAL(&mux);
   medir = leerTemperatura;
   leerTemperatura = false;
   portEXIT_CRITICAL(&mux);
 
-  // Si se presiono el boton
   if (medir) {
+
     float temperatura = leerTemp();
+
     separarTemperatura(temperatura);
     revisarTemperatura(temperatura);
 
+    Serial.print("Temperatura: ");
     Serial.print(temperatura);
+    Serial.println(" C");
+
+    Serial.print("Displays: ");
     Serial.print(decenas);
     Serial.print(unidades);
     Serial.println(decimal);
+
+    Serial.print("Enviando a Adafruit IO: ");
+    Serial.println(temperatura);
+
+    canalTemperatura->save(temperatura);
   }
 }
 
-// INTERRUPCION BOTON
 void IRAM_ATTR botonISR() {
+
   uint32_t tiempoActual = millis();
-  uint32_t diferencia =
-    tiempoActual - tiempoBoton;
+  uint32_t diferencia = tiempoActual - tiempoBoton;
+
   tiempoBoton = tiempoActual;
-  if (
-    diferencia >= tiempoAntirrebote &&
-    gpio_get_level(boton) == 1
-  ) {
+
+  if (diferencia >= tiempoAntirrebote && gpio_get_level(boton) == 1) {
+
     portENTER_CRITICAL_ISR(&mux);
     leerTemperatura = true;
     portEXIT_CRITICAL_ISR(&mux);
   }
 }
 
-// SENSOR LM35
 float leerTemp() {
+
   int adcVal = analogRead(sensor);
-  float milliVolt =
-    adcVal * (ADC_VREF_mV / ADC_RESOLUTION);
-  float tempC =
-    milliVolt / 10.0;
+  float milliVolt = adcVal * (ADC_VREF_mV / ADC_RESOLUTION);
+  float tempC = milliVolt / 10.0;
+
   return tempC;
 }
 
-// REVISAR TEMPERATURA
 void revisarTemperatura(float temperatura) {
+
   if (temperatura < 23.0) {
     encenderAzul();
   }
@@ -206,23 +226,27 @@ void revisarTemperatura(float temperatura) {
   }
 }
 
-// CONFIGURAR RGB
 void configurarRGB() {
+
   ledc_timer_config_t configTimer = {};
+
   configTimer.speed_mode = LEDC_HIGH_SPEED_MODE;
   configTimer.duty_resolution = LEDC_TIMER_8_BIT;
   configTimer.timer_num = timerRGB;
   configTimer.freq_hz = 5000;
   configTimer.clk_cfg = LEDC_AUTO_CLK;
+
   ledc_timer_config(&configTimer);
+
   configurarCanal(ledroja, canalRojo, timerRGB);
   configurarCanal(ledverde, canalVerde, timerRGB);
   configurarCanal(ledazul, canalAzul, timerRGB);
 }
 
-// CONFIGURAR CANAL PWM
 void configurarCanal(gpio_num_t pin, ledc_channel_t canal, ledc_timer_t timer) {
+
   ledc_channel_config_t configCanal = {};
+
   configCanal.gpio_num = pin;
   configCanal.speed_mode = LEDC_HIGH_SPEED_MODE;
   configCanal.channel = canal;
@@ -230,52 +254,61 @@ void configurarCanal(gpio_num_t pin, ledc_channel_t canal, ledc_timer_t timer) {
   configCanal.timer_sel = timer;
   configCanal.duty = 0;
   configCanal.hpoint = 0;
+
   ledc_channel_config(&configCanal);
 }
 
-// ESCRIBIR RGB
 void escribirRGB(uint8_t rojo, uint8_t verde, uint8_t azul) {
+
   ledc_set_duty(LEDC_HIGH_SPEED_MODE, canalRojo, rojo);
   ledc_update_duty(LEDC_HIGH_SPEED_MODE, canalRojo);
+
   ledc_set_duty(LEDC_HIGH_SPEED_MODE, canalVerde, verde);
   ledc_update_duty(LEDC_HIGH_SPEED_MODE, canalVerde);
+
   ledc_set_duty(LEDC_HIGH_SPEED_MODE, canalAzul, azul);
   ledc_update_duty(LEDC_HIGH_SPEED_MODE, canalAzul);
 }
-// COLORES RGB
+
 void apagarLED() {
   escribirRGB(0, 0, 0);
 }
+
 void encenderRojo() {
   escribirRGB(255, 0, 0);
 }
+
 void encenderVerde() {
   escribirRGB(0, 255, 0);
 }
+
 void encenderAzul() {
   escribirRGB(0, 0, 255);
 }
+
 void encenderGelb() {
   escribirRGB(255, 170, 0);
 }
 
-// SEPARAR TEMPERATURA
 void separarTemperatura(float temperatura) {
-  int temp =
-    (int)(temperatura * 10.0 + 0.5);
+
+  int temp = (int)(temperatura * 10.0 + 0.5);
+
   if (temp < 0) {
     temp = 0;
   }
+
   if (temp > 999) {
     temp = 999;
   }
+
   decenas = temp / 100;
   unidades = (temp / 10) % 10;
   decimal = temp % 10;
 }
 
-// MOSTRAR NUMERO
 void mostrarNumero(uint8_t numero) {
+
   gpio_set_level(a, numeros[numero][0]);
   gpio_set_level(b, numeros[numero][1]);
   gpio_set_level(c, numeros[numero][2]);
@@ -285,8 +318,8 @@ void mostrarNumero(uint8_t numero) {
   gpio_set_level(g, numeros[numero][6]);
 }
 
-// APAGAR SEGMENTOS
 void apagarSegmentos() {
+
   gpio_set_level(a, LOW);
   gpio_set_level(b, LOW);
   gpio_set_level(c, LOW);
@@ -296,41 +329,42 @@ void apagarSegmentos() {
   gpio_set_level(g, LOW);
 }
 
-// APAGAR DISPLAYS
 void apagarDisplays() {
+
   gpio_set_level(DISPLAY_1, LOW);
   gpio_set_level(DISPLAY_2, LOW);
   digitalWrite(DISPLAY_3, LOW);
 }
 
-// MULTIPLEXADO
+// MULTIPLEAXADO
 void multiplexarDisplays() {
-  // Cambiar display cada 2 ms
-  if (micros() - tiempoMux < 2000) {
+
+  if (micros() - tiempoMux < 500) {
     return;
   }
+
   tiempoMux = micros();
   apagarDisplays();
   apagarSegmentos();
-  delayMicroseconds(100);
+  delayMicroseconds(10);
 
   switch (digitoActual) {
-    // DECENAS
+
     case 0:
       mostrarNumero(decenas);
-      delayMicroseconds(20);
+      delayMicroseconds(5);
       gpio_set_level(DISPLAY_1, HIGH);
       break;
-    // UNIDADES
+
     case 1:
       mostrarNumero(unidades);
-      delayMicroseconds(20);
+      delayMicroseconds(5);
       gpio_set_level(DISPLAY_2, HIGH);
       break;
-    // DECIMAL
+
     case 2:
       mostrarNumero(decimal);
-      delayMicroseconds(20);
+      delayMicroseconds(5);
       digitalWrite(DISPLAY_3, HIGH);
       break;
   }
